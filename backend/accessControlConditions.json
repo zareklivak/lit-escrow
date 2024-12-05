@@ -1,16 +1,13 @@
 [
   {
-    "contractAddress": "",
+    "contractAddress": "0x5F3933184A2BFEAc07d85c1D07a0787552F135B9",
     "standardContractType": "",
     "chain": "ethereum",
-    "method": "eth_getBalance",
-    "parameters": [
-      ":userAddress",
-      "latest"
-    ],
+    "method": "isFundsReleased",
+    "parameters": [],
     "returnValueTest": {
-      "comparator": ">=",
-      "value": "1000000000000"
+      "comparator": "=",
+      "value": "true"
     }
   }
 ]
