@@ -1,66 +1,99 @@
-// decryptAsset.js
-require('dotenv').config();
-const { ethers } = require('ethers');
-const fs = require('fs');
+import dotenv from 'dotenv';
+import { ethers } from 'ethers';
+import { LitNodeClientNodeJs } from '@lit-protocol/lit-node-client-nodejs';
+import { decryptToString } from '@lit-protocol/encryption';
+import { LIT_NETWORK, LIT_ABILITY } from '@lit-protocol/constants';
+import { LitAccessControlConditionResource, createSiweMessageWithRecaps, generateAuthSig } from '@lit-protocol/auth-helpers';
+import fs from 'fs/promises';
+import axios from 'axios';
 
-// Import the Lit SDK and helpers
-const LitJsSdk = require('@lit-protocol/lit-node-client');
-const { LIT_NETWORK } = require('@lit-protocol/constants');
-const { checkAndSignAuthMessage } = require('@lit-protocol/auth-helpers');
+dotenv.config();
 
-const decryptAsset = async () => {
-    const chain = 'ethereum';
-
-    // Initialize LitNodeClient
-    const litNodeClient = new LitJsSdk.LitNodeClient({
-        litNetwork: LIT_NETWORK.DatilDev,
-    });
+const initializeLitNodeClient = async () => {
+    const litNodeClient = new LitNodeClientNodeJs({ litNetwork: LIT_NETWORK.DatilDev });
     await litNodeClient.connect();
+    return litNodeClient;
+};
 
-    // Buyer's wallet
-    const buyerWallet = new ethers.Wallet(process.env.BUYER_PRIVATE_KEY);
+const getSessionSigs = async (litNodeClient, accessControlConditions) => {
+    const wallet = new ethers.Wallet(process.env.BUYER_PRIVATE_KEY);
+    const latestBlockhash = await litNodeClient.getLatestBlockhash();
 
-    // Buyer's authentication signature
-    const authSig = await checkAndSignAuthMessage({ chain, ethers, wallet: buyerWallet });
+    const authNeededCallback = async (params) => {
+        const toSign = await createSiweMessageWithRecaps({
+            uri: params.uri,
+            expiration: params.expiration,
+            resources: params.resourceAbilityRequests,
+            walletAddress: wallet.address,
+            nonce: latestBlockhash,
+            litNodeClient,
+        });
 
-    // Read encrypted asset and symmetric key
-    const encryptedString = fs.readFileSync('encryptedAsset', 'utf8');
-    const encryptedSymmetricKeyHex = fs.readFileSync('encryptedSymmetricKey', 'utf8').trim();
-    const encryptedSymmetricKey = LitJsSdk.hexStringToUint8Array(encryptedSymmetricKeyHex);
+        return await generateAuthSig({
+            signer: wallet,
+            toSign,
+        });
+    };
 
-    // Define access control conditions
-    const accessControlConditions = [
-        {
-            contractAddress: fs.readFileSync('contractAddress.txt', 'utf8').trim(),
+    const litResource = new LitAccessControlConditionResource('*');
+
+    return await litNodeClient.getSessionSigs({
+        chain: 'ethereum',
+        resourceAbilityRequests: [{
+            resource: litResource,
+            ability: LIT_ABILITY.AccessControlConditionDecryption,
+        }],
+        authNeededCallback,
+    });
+};
+
+const fetchFromIPFS = async (cid) => {
+    const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${cid}`, {
+        responseType: 'text',
+        transformResponse: [(data) => data]
+    });
+    return JSON.parse(response.data);
+};
+
+const main = async () => {
+    try {
+        const contractAddress = (await fs.readFile('contractAddress.txt', 'utf8')).trim();
+        const accessControlConditions = [{
+            contractAddress,
             standardContractType: '',
-            chain: chain,
+            chain: 'ethereum',
             method: 'isFundsReleased',
             parameters: [],
             returnValueTest: {
                 comparator: '=',
-                value: 'true',
+                value: 'true'
+            }
+        }];
+
+        const litNodeClient = await initializeLitNodeClient();
+        const sessionSigs = await getSessionSigs(litNodeClient, accessControlConditions);
+        const cids = JSON.parse(await fs.readFile('cids.json', 'utf8'));
+        const encryptedData = await fetchFromIPFS(cids.ciphertextCid);
+
+        console.log('Encrypted Data:', encryptedData);
+
+        const decryptedString = await decryptToString(
+            {
+                accessControlConditions,
+                chain: 'ethereum',
+                sessionSigs,
+                encryptedSymmetricKey: encryptedData.encryptedSymmetricKey,
+                encryptedString: encryptedData.encryptedString,
             },
-        },
-    ];
+            litNodeClient
+        );
 
-    // Retrieve symmetric key
-    const symmetricKey = await litNodeClient.getEncryptionKey({
-        accessControlConditions,
-        toDecrypt: encryptedSymmetricKey,
-        chain,
-        authSig,
-    });
-
-    // Decrypt the asset
-    const decryptedString = await LitJsSdk.decryptString(
-        encryptedString,
-        symmetricKey
-    );
-
-    console.log('Decrypted Asset:', decryptedString);
+        console.log('Decrypted Asset:', decryptedString);
+        return decryptedString;
+    } catch (error) {
+        console.error('Decryption error:', error);
+        throw error;
+    }
 };
 
-decryptAsset().catch((error) => {
-    console.error('Error in decryptAsset:', error);
-    process.exit(1);
-});
+main();

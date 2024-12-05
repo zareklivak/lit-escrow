@@ -1,12 +1,10 @@
 import dotenv from 'dotenv';
-import { ethers } from 'ethers';
-import fs from 'fs';
-import path from 'path';
-import FormData from 'form-data';
-import axios from 'axios';
 import { LitNodeClientNodeJs } from '@lit-protocol/lit-node-client-nodejs';
-import { LIT_NETWORK } from '@lit-protocol/constants';
 import { encryptString } from '@lit-protocol/encryption';
+import { LIT_NETWORK } from '@lit-protocol/constants';
+import fs from 'fs/promises';
+import axios from 'axios';
+import FormData from 'form-data';
 
 // Load environment variables
 dotenv.config();
@@ -15,7 +13,6 @@ dotenv.config();
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_API_SECRET = process.env.PINATA_API_SECRET;
 
-// Validate Pinata API credentials
 if (!PINATA_API_KEY || !PINATA_API_SECRET) {
     console.error('❌ Error: Pinata API Key and Secret are required in the .env file.');
     process.exit(1);
@@ -23,22 +20,17 @@ if (!PINATA_API_KEY || !PINATA_API_SECRET) {
 
 /**
  * Initialize the Lit Protocol Node Client.
- * Connects to the Lit network for encryption and access control.
  */
 const initializeLitNodeClient = async () => {
-    console.log('🔄 [1/4] Connecting to the Lit Protocol network...');
+    console.log('🔄 Connecting to the Lit Protocol network...');
     const litNodeClient = new LitNodeClientNodeJs({ litNetwork: LIT_NETWORK.DatilDev });
-
     await litNodeClient.connect();
     console.log('✅ Connected to the Lit network.');
     return litNodeClient;
 };
 
 /**
- * Upload a file or data to Pinata (IPFS).
- * @param {string} fileName - Display name of the file.
- * @param {string|Buffer} data - The data to upload.
- * @returns {string} - The CID (Content Identifier) of the uploaded file.
+ * Upload data to Pinata (IPFS).
  */
 const uploadToPinata = async (fileName, data) => {
     try {
@@ -49,7 +41,6 @@ const uploadToPinata = async (fileName, data) => {
 
         const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
             maxContentLength: 'Infinity',
-            maxBodyLength: 'Infinity',
             headers: {
                 ...formData.getHeaders(),
                 pinata_api_key: PINATA_API_KEY,
@@ -60,86 +51,31 @@ const uploadToPinata = async (fileName, data) => {
         console.log(`✅ Uploaded "${fileName}" | CID: ${response.data.IpfsHash}`);
         return response.data.IpfsHash;
     } catch (error) {
-        console.error(`❌ Failed to upload "${fileName}" to Pinata:`, error.response?.data || error.message);
-        throw new Error(`Upload failed for "${fileName}".`);
+        console.error(`❌ Failed to upload "${fileName}" to Pinata:`, error.message);
+        throw new Error('Upload failed.');
     }
 };
 
 /**
- * Encrypt a given asset using the Lit Protocol.
- * @param {object} litNodeClient - Lit Protocol client instance.
- * @param {Array} accessControlConditions - Access control conditions for the encryption.
- * @param {string} asset - The asset (text or file data) to encrypt.
- * @returns {object} - Encrypted data and its hash.
+ * Save generated CIDs to a JSON file.
  */
-const encryptAsset = async (litNodeClient, accessControlConditions, asset) => {
-    console.log('🔒 [2/4] Encrypting the asset...');
+const saveCIDsToFile = async (cids) => {
+    const fileName = 'cids.json';
     try {
-        const encryptionResult = await encryptString(
-            { accessControlConditions, dataToEncrypt: asset },
-            litNodeClient
-        );
-
-        console.log('✅ Encryption completed.');
-        console.log('   - Ciphertext: (truncated)');
-        console.log(`     ${encryptionResult.ciphertext.slice(0, 60)}...`);
-        console.log(`   - Data Hash: ${encryptionResult.dataToEncryptHash}`);
-        return encryptionResult;
+        await fs.writeFile(fileName, JSON.stringify(cids, null, 2));
+        console.log(`✅ CIDs saved to ${fileName}`);
     } catch (error) {
-        console.error('❌ Error during the encryption process:', error.message);
-        throw new Error('Encryption process failed.');
+        console.error(`❌ Error saving CIDs to file:`, error.message);
     }
 };
 
 /**
- * Save encrypted data and metadata to Pinata.
- * @param {string} ciphertext - Encrypted data (ciphertext).
- * @param {string} dataToEncryptHash - Hash of the original data.
- * @param {Array} accessControlConditions - Access control conditions as metadata.
- * @returns {object} - Object containing CIDs of the uploaded files.
- */
-const saveEncryptionResults = async (ciphertext, dataToEncryptHash, accessControlConditions) => {
-    console.log('📦 [3/4] Saving encrypted data and metadata to Pinata...');
-    try {
-        // Upload ciphertext
-        const ciphertextCid = await uploadToPinata('encryptedAsset.txt', ciphertext);
-
-        // Upload hash of the original data
-        const dataToEncryptHashCid = await uploadToPinata('dataToEncryptHash.txt', dataToEncryptHash);
-
-        // Upload access control conditions as JSON
-        const accessControlConditionsCid = await uploadToPinata(
-            'accessControlConditions.json',
-            JSON.stringify(accessControlConditions, null, 2)
-        );
-
-        console.log('✅ All files uploaded to Pinata.');
-        return {
-            ciphertextCid,
-            dataToEncryptHashCid,
-            accessControlConditionsCid,
-        };
-    } catch (error) {
-        console.error('❌ Error saving encrypted data and metadata:', error.message);
-        throw new Error('Failed to save encrypted data and metadata.');
-    }
-};
-
-/**
- * Main Function: Executes the full workflow.
- * 1. Connects to the Lit Protocol.
- * 2. Encrypts the asset.
- * 3. Uploads encrypted data and metadata to Pinata (IPFS).
+ * Main function to execute the encryption workflow.
  */
 const main = async () => {
-    console.log('======================== ENCRYPTION WORKFLOW START ========================');
     try {
-        // 1. Initialize Lit Node Client
-        const litNodeClient = await initializeLitNodeClient();
-
-        // 2. Define access control conditions
+        const contractAddress = (await fs.readFile('contractAddress.txt', 'utf8')).trim();
         const chain = 'ethereum';
-        const contractAddress = '0x5F3933184A2BFEAc07d85c1D07a0787552F135B9'; // Replace with your contract address
         const accessControlConditions = [
             {
                 contractAddress,
@@ -154,40 +90,34 @@ const main = async () => {
             },
         ];
 
-        console.log('🛡️ Defined Access Control Conditions.');
-        console.log(JSON.stringify(accessControlConditions, null, 2));
+        console.log('🛡️ Access Control Conditions:', JSON.stringify(accessControlConditions, null, 2));
 
-        // 3. The asset to be encrypted
+        const litNodeClient = await initializeLitNodeClient();
+
         const asset = 'This is the secret asset to be revealed upon fund release.';
-        console.log(`📄 Asset to encrypt: "${asset}"`);
-
-        // 4. Encrypt the asset
-        const { ciphertext, dataToEncryptHash } = await encryptAsset(
-            litNodeClient,
-            accessControlConditions,
-            asset
+        const { ciphertext, dataToEncryptHash } = await encryptString(
+            { accessControlConditions, dataToEncrypt: asset },
+            litNodeClient
         );
 
-        if (!ciphertext || !dataToEncryptHash) {
-            throw new Error('Encryption failed: Missing outputs.');
-        }
+        const cids = {
+            ciphertextCid: await uploadToPinata('encryptedAsset.txt', ciphertext),
+            dataToEncryptHashCid: await uploadToPinata('dataToEncryptHash.txt', dataToEncryptHash),
+            accessControlConditionsCid: await uploadToPinata(
+                'accessControlConditions.json',
+                JSON.stringify(accessControlConditions, null, 2)
+            ),
+        };
 
-        // 5. Save the encrypted data and metadata to Pinata
-        const cids = await saveEncryptionResults(ciphertext, dataToEncryptHash, accessControlConditions);
+        await saveCIDsToFile(cids);
 
-        // 6. Display CIDs for uploaded data
-        console.log('\n🌐 [4/4] Data uploaded to Pinata successfully:');
-        console.log(`   🔗 Ciphertext CID: ${cids.ciphertextCid}`);
-        console.log(`   🔗 Data Hash CID: ${cids.dataToEncryptHashCid}`);
-        console.log(`   🔗 Access Control Conditions CID: ${cids.accessControlConditionsCid}`);
-        console.log('🎉 Workflow completed successfully!');
-
+        console.log('🎉 Workflow completed successfully.');
+        console.log('🔗 Ciphertext CID:', cids.ciphertextCid);
+        console.log('🔗 Data Hash CID:', cids.dataToEncryptHashCid);
+        console.log('🔗 Access Control CID:', cids.accessControlConditionsCid);
     } catch (error) {
-        console.error('❌ An error occurred during the process:', error.message);
-        process.exit(1);
+        console.error('❌ An error occurred:', error.message);
     }
-    console.log('==========================================================================');
 };
 
-// Execute the main function
 main();
