@@ -15,6 +15,7 @@
     "@lit-protocol/contracts": "^0.0.74",
     "@lit-protocol/contracts-sdk": "^7.0.0",
     "@lit-protocol/encryption": "^7.0.0",
+    "@lit-protocol/lit-node-client": "^7.0.0",
     "@lit-protocol/lit-node-client-nodejs": "^7.0.0",
     "@web3-storage/w3up-client": "^16.5.2",
     "axios": "^1.7.9",
@@ -22,6 +23,8 @@
     "ethers": "^5.7.2",
     "form-data": "^4.0.1",
     "ipfs-http-client": "^60.0.1",
+    "node-localstorage": "^3.0.5",
+    "siwe": "^2.3.2",
     "uint8arrays": "^5.1.0",
     "web3.storage": "^4.5.5"
   },

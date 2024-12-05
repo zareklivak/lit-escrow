@@ -9,7 +9,7 @@ import FormData from 'form-data';
 // Load environment variables
 dotenv.config();
 
-// Pinata API credentials from .env
+// Pinata API credentials
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_API_SECRET = process.env.PINATA_API_SECRET;
 
@@ -35,9 +35,13 @@ const initializeLitNodeClient = async () => {
 const uploadToPinata = async (fileName, data) => {
     try {
         console.log(`📤 Uploading "${fileName}" to Pinata...`);
-
         const formData = new FormData();
-        formData.append('file', Buffer.from(data, 'utf8'), fileName);
+
+        if (typeof data === 'string' || Buffer.isBuffer(data)) {
+            formData.append('file', Buffer.from(data, 'utf8'), fileName);
+        } else {
+            formData.append('file', Buffer.from(JSON.stringify(data, null, 2), 'utf8'), fileName);
+        }
 
         const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
             maxContentLength: 'Infinity',
@@ -95,26 +99,30 @@ const main = async () => {
         const litNodeClient = await initializeLitNodeClient();
 
         const asset = 'This is the secret asset to be revealed upon fund release.';
-        const { ciphertext, dataToEncryptHash } = await encryptString(
+        const { ciphertext, dataToEncryptHash, encryptedSymmetricKey } = await encryptString(
             { accessControlConditions, dataToEncrypt: asset },
             litNodeClient
         );
 
+        const encryptedAsset = {
+            ciphertext,
+            encryptedSymmetricKey,
+            dataToEncryptHash,
+        };
+
         const cids = {
-            ciphertextCid: await uploadToPinata('encryptedAsset.txt', ciphertext),
-            dataToEncryptHashCid: await uploadToPinata('dataToEncryptHash.txt', dataToEncryptHash),
+            encryptedAssetCid: await uploadToPinata('encryptedAsset.json', encryptedAsset),
             accessControlConditionsCid: await uploadToPinata(
                 'accessControlConditions.json',
-                JSON.stringify(accessControlConditions, null, 2)
+                accessControlConditions
             ),
         };
 
         await saveCIDsToFile(cids);
 
         console.log('🎉 Workflow completed successfully.');
-        console.log('🔗 Ciphertext CID:', cids.ciphertextCid);
-        console.log('🔗 Data Hash CID:', cids.dataToEncryptHashCid);
-        console.log('🔗 Access Control CID:', cids.accessControlConditionsCid);
+        console.log('🔗 Encrypted Asset CID:', cids.encryptedAssetCid);
+        console.log('🔗 Access Control Conditions CID:', cids.accessControlConditionsCid);
     } catch (error) {
         console.error('❌ An error occurred:', error.message);
     }
