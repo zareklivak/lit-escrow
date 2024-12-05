@@ -6,10 +6,8 @@ import fs from 'fs/promises';
 import axios from 'axios';
 import FormData from 'form-data';
 
-// Load environment variables
 dotenv.config();
 
-// Pinata API credentials
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_API_SECRET = process.env.PINATA_API_SECRET;
 
@@ -18,9 +16,6 @@ if (!PINATA_API_KEY || !PINATA_API_SECRET) {
     process.exit(1);
 }
 
-/**
- * Initialize the Lit Protocol Node Client.
- */
 const initializeLitNodeClient = async () => {
     console.log('🔄 Connecting to the Lit Protocol network...');
     const litNodeClient = new LitNodeClientNodeJs({ litNetwork: LIT_NETWORK.DatilDev });
@@ -29,19 +24,11 @@ const initializeLitNodeClient = async () => {
     return litNodeClient;
 };
 
-/**
- * Upload data to Pinata (IPFS).
- */
 const uploadToPinata = async (fileName, data) => {
     try {
         console.log(`📤 Uploading "${fileName}" to Pinata...`);
         const formData = new FormData();
-
-        if (typeof data === 'string' || Buffer.isBuffer(data)) {
-            formData.append('file', Buffer.from(data, 'utf8'), fileName);
-        } else {
-            formData.append('file', Buffer.from(JSON.stringify(data, null, 2), 'utf8'), fileName);
-        }
+        formData.append('file', Buffer.from(JSON.stringify(data, null, 2), 'utf8'), fileName);
 
         const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
             maxContentLength: 'Infinity',
@@ -60,22 +47,6 @@ const uploadToPinata = async (fileName, data) => {
     }
 };
 
-/**
- * Save generated CIDs to a JSON file.
- */
-const saveCIDsToFile = async (cids) => {
-    const fileName = 'cids.json';
-    try {
-        await fs.writeFile(fileName, JSON.stringify(cids, null, 2));
-        console.log(`✅ CIDs saved to ${fileName}`);
-    } catch (error) {
-        console.error(`❌ Error saving CIDs to file:`, error.message);
-    }
-};
-
-/**
- * Main function to execute the encryption workflow.
- */
 const main = async () => {
     try {
         const contractAddress = (await fs.readFile('contractAddress.txt', 'utf8')).trim();
@@ -87,42 +58,27 @@ const main = async () => {
                 chain,
                 method: 'isFundsReleased',
                 parameters: [],
-                returnValueTest: {
-                    comparator: '=',
-                    value: 'true',
-                },
+                returnValueTest: { comparator: '=', value: 'true' },
             },
         ];
 
         console.log('🛡️ Access Control Conditions:', JSON.stringify(accessControlConditions, null, 2));
-
         const litNodeClient = await initializeLitNodeClient();
-
         const asset = 'This is the secret asset to be revealed upon fund release.';
+
         const { ciphertext, dataToEncryptHash, encryptedSymmetricKey } = await encryptString(
             { accessControlConditions, dataToEncrypt: asset },
             litNodeClient
         );
 
-        const encryptedAsset = {
-            ciphertext,
-            encryptedSymmetricKey,
-            dataToEncryptHash,
-        };
-
+        const encryptedAsset = { ciphertext, encryptedSymmetricKey, dataToEncryptHash };
         const cids = {
             encryptedAssetCid: await uploadToPinata('encryptedAsset.json', encryptedAsset),
-            accessControlConditionsCid: await uploadToPinata(
-                'accessControlConditions.json',
-                accessControlConditions
-            ),
+            accessControlConditionsCid: await uploadToPinata('accessControlConditions.json', accessControlConditions),
         };
 
-        await saveCIDsToFile(cids);
-
-        console.log('🎉 Workflow completed successfully.');
-        console.log('🔗 Encrypted Asset CID:', cids.encryptedAssetCid);
-        console.log('🔗 Access Control Conditions CID:', cids.accessControlConditionsCid);
+        await fs.writeFile('cids.json', JSON.stringify(cids, null, 2));
+        console.log('✅ Workflow completed successfully.');
     } catch (error) {
         console.error('❌ An error occurred:', error.message);
     }

@@ -26,10 +26,12 @@ const initializeLitNodeClient = async () => {
 
 const uploadToPinata = async (fileName, data) => {
     try {
+        console.log(`📤 Uploading "${fileName}" to Pinata...`);
         const formData = new FormData();
-        formData.append('file', Buffer.from(data, 'utf8'), fileName);
+        formData.append('file', Buffer.from(JSON.stringify(data, null, 2), 'utf8'), fileName);
 
         const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', formData, {
+            maxContentLength: 'Infinity',
             headers: {
                 ...formData.getHeaders(),
                 pinata_api_key: PINATA_API_KEY,
@@ -37,54 +39,49 @@ const uploadToPinata = async (fileName, data) => {
             },
         });
 
+        console.log(`✅ Uploaded "${fileName}" | CID: ${response.data.IpfsHash}`);
         return response.data.IpfsHash;
     } catch (error) {
-        throw new Error(`Failed to upload ${fileName}: ${error.message}`);
+        console.error(`❌ Failed to upload "${fileName}" to Pinata:`, error.message);
+        throw new Error('Upload failed.');
     }
 };
 
-const saveCIDsToFile = async (cids) => {
-    const fileName = 'cids.json';
-    await fs.writeFile(fileName, JSON.stringify(cids, null, 2));
-};
-
 const main = async () => {
-    const contractAddress = (await fs.readFile('contractAddress.txt', 'utf8')).trim();
-    const chain = 'ethereum';
-    const accessControlConditions = [
-        {
-            contractAddress,
-            standardContractType: '',
-            chain,
-            method: 'isFundsReleased',
-            parameters: [],
-            returnValueTest: {
-                comparator: '=',
-                value: 'true',
+    try {
+        const contractAddress = (await fs.readFile('contractAddress.txt', 'utf8')).trim();
+        const chain = 'ethereum';
+        const accessControlConditions = [
+            {
+                contractAddress,
+                standardContractType: '',
+                chain,
+                method: 'isFundsReleased',
+                parameters: [],
+                returnValueTest: { comparator: '=', value: 'true' },
             },
-        },
-    ];
+        ];
 
-    const litNodeClient = await initializeLitNodeClient();
+        console.log('🛡️ Access Control Conditions:', JSON.stringify(accessControlConditions, null, 2));
+        const litNodeClient = await initializeLitNodeClient();
+        const asset = 'This is the secret asset to be revealed upon fund release.';
 
-    const asset = 'This is the secret asset.';
-    const { ciphertext, encryptedSymmetricKey, dataToEncryptHash } = await encryptString(
-        { accessControlConditions, dataToEncrypt: asset },
-        litNodeClient
-    );
+        const { ciphertext, dataToEncryptHash, encryptedSymmetricKey } = await encryptString(
+            { accessControlConditions, dataToEncrypt: asset },
+            litNodeClient
+        );
 
-    const encryptedAsset = {
-        ciphertext,
-        encryptedSymmetricKey,
-        dataToEncryptHash,
-    };
+        const encryptedAsset = { ciphertext, encryptedSymmetricKey, dataToEncryptHash };
+        const cids = {
+            encryptedAssetCid: await uploadToPinata('encryptedAsset.json', encryptedAsset),
+            accessControlConditionsCid: await uploadToPinata('accessControlConditions.json', accessControlConditions),
+        };
 
-    const cids = {
-        encryptedAssetCid: await uploadToPinata('encryptedAsset.json', JSON.stringify(encryptedAsset)),
-        accessControlConditionsCid: await uploadToPinata('accessControlConditions.json', JSON.stringify(accessControlConditions)),
-    };
-
-    await saveCIDsToFile(cids);
+        await fs.writeFile('cids.json', JSON.stringify(cids, null, 2));
+        console.log('✅ Workflow completed successfully.');
+    } catch (error) {
+        console.error('❌ An error occurred:', error.message);
+    }
 };
 
-main().catch(console.error);
+main();
