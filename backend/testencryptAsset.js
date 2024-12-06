@@ -64,8 +64,8 @@ const main = async () => {
 
         console.log('🛡️ Access Control Conditions:', JSON.stringify(accessControlConditions, null, 2));
         const litNodeClient = await initializeLitNodeClient();
-        const asset = 'This is the secret asset to be revealed upon fund release.';
 
+        const asset = 'This is the secret asset to be revealed upon fund release.';
         const { ciphertext, dataToEncryptHash, encryptedSymmetricKey } = await encryptString(
             { accessControlConditions, dataToEncrypt: asset },
             litNodeClient
@@ -80,8 +80,9 @@ const main = async () => {
         await fs.writeFile('cids.json', JSON.stringify(cids, null, 2));
         console.log('✅ Workflow completed successfully.');
     } catch (error) {
-        console.error('❌ An error occurred:', error.message);
+        console.error('❌ Encryption Workflow Failed:', error.message);
     }
 };
+
 
 main();

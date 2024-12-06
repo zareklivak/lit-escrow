@@ -54,8 +54,9 @@ const main = async () => {
             authNeededCallback: async () => {
                 const wallet = new ethers.Wallet(process.env.BUYER_PRIVATE_KEY);
 
-                // Create the SIWE message
+                // Create the SIWE message with domain
                 const siweMessage = await createSiweMessage({
+                    domain: 'localhost:3000', // Update this to your application domain
                     walletAddress: wallet.address,
                     nonce: await litNodeClient.getLatestBlockhash(),
                 });
