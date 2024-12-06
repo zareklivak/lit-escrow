@@ -1,66 +1,104 @@
-## Foundry
+# Decentralized Escrow Platform
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+## Project Objective
+This project is designed to create a **Decentralized Escrow Platform** that uses **Ethereum smart contracts** and the **Lit Protocol** to facilitate secure and conditional exchange of funds and assets. Key functionalities include:
 
-Foundry consists of:
+1. **Escrow Fund Management**:
+   - Secure handling of ETH deposits and conditional release of funds.
+2. **Conditional Asset Decryption**:
+   - Encryption of sensitive assets with decryption conditioned upon fund release.
+3. **Decentralized Storage Integration**:
+   - Storing encrypted assets on **IPFS** (via **Pinata**) for decentralized and immutable storage.
 
--   **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
--   **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
--   **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
--   **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+### Key Benefits
+- **Buyer-Seller Fairness**: Protects both parties by enforcing conditional transactions.
+- **Transparency**: Blockchain-based validation ensures trust.
+- **Decentralization**: Eliminates the need for intermediaries.
 
-## Documentation
+---
 
-https://book.getfoundry.sh/
+## Workflow
 
-## Usage
+### **Step 1: Asset Preparation and Encryption (Seller)**
 
-### Build
+#### Process
+1. **Asset Encryption**:
+   - Utilize the **Lit Protocol SDK** to encrypt assets (e.g., confidential documents).
+   - Define **Access Control Conditions (ACCs)** to restrict decryption. The ACCs enforce that `isFundsReleased == true` in the smart contract.
 
-```shell
-$ forge build
-```
+2. **Storage**:
+   - Upload the encrypted asset and ACCs to **IPFS** using **Pinata**.
+   - Save the generated **CIDs** for:
+     - Encrypted asset.
+     - Access Control Conditions (ACCs).
 
-### Test
+#### Outputs
+- `ciphertext`: Encrypted asset.
+- `encryptedSymmetricKey`: Decryption key secured with ACCs.
 
-```shell
-$ forge test
-```
+**Code Reference**: [encryptAssetTest.js](encryptAssetTest.js)
 
-### Format
+---
 
-```shell
-$ forge fmt
-```
+### **Step 2: Fund Deposit (Buyer)**
 
-### Gas Snapshots
+#### Process
+1. **Deposit ETH**:
+   - Buyer calls the `deposit` function on the escrow smart contract.
+   - The smart contract validates:
+     - Sender is the buyer.
+     - Funds haven’t already been deposited.
+     - Deposit amount > 0.
 
-```shell
-$ forge snapshot
-```
+2. **State Update**:
+   - Sets `isFundsDeposited = true`.
 
-### Anvil
+#### Post-Deposit State
+- `isFundsDeposited == true`
+- `isFundsReleased == false`
 
-```shell
-$ anvil
-```
+**Code Reference**: [depositFunds.js](depositFunds.js)
 
-### Deploy
+---
 
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
+### **Step 3: Fund Release and Decryption (Buyer)**
 
-### Cast
+#### Process
+1. **Release Funds**:
+   - Buyer calls the `releaseFunds` function on the escrow smart contract.
+   - Contract ensures:
+     - Caller is the buyer.
+     - Funds have been deposited and not yet released.
 
-```shell
-$ cast <subcommand>
-```
+2. **Fund Transfer**:
+   - Sends ETH to the seller.
+   - Sets `isFundsReleased = true`.
 
-### Help
+3. **Decryption**:
+   - Buyer requests the decryption key from the Lit Protocol.
+   - Lit verifies `isFundsReleased == true`.
+   - Buyer decrypts the asset.
 
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+**Code Reference**: [releaseFunds.js](releaseFunds.js), [decryptAsset.js](decryptAsset.js)
+
+---
+
+## Deployment and Setup
+
+### **Smart Contract Deployment**
+1. Use the `deploy.js` script to deploy the escrow smart contract.
+2. The deployed contract address is stored in `contractAddress.txt`.
+
+**Code Reference**: [deploy.js](deploy.js)
+
+---
+
+## How to Use
+
+### **Prerequisites**
+1. Install Node.js (v14+ recommended).
+2. Set up a `.env` file with the following:
+   - `BUYER_PRIVATE_KEY`: Private key of the buyer's Ethereum wallet.
+   - `SELLER_PRIVATE_KEY`: Private key of the seller's Ethereum wallet.
+   - `ALCHEMY_API_URL`: Ethereum network endpoint.
+   - `PINATA_API_KEY` and `PINATA_API_SECRET`: For IPFS uploads via Pinata.
